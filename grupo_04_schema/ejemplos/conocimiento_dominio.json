@@ -1,0 +1,290 @@
+{
+  "meta": {
+    "project_title": "Consulta académica: calificaciones y repetición de asignaturas",
+    "version": "1.0",
+    "author_group": "Grupo 4 - Schema Manager"
+  },
+  "attributes": [
+    {
+      "id": "tipo_consulta",
+      "name": "Tipo de consulta académica",
+      "type": "categorical",
+      "question": "¿Qué desea consultar?",
+      "options": [
+        "Calificacion",
+        "Repeticion"
+      ]
+    },
+    {
+      "id": "puntaje_final",
+      "name": "Puntaje final de la asignatura",
+      "type": "numeric",
+      "question": "¿Cuál fue el puntaje final de la asignatura (de 0 a 100)?",
+      "range": [
+        0,
+        100
+      ],
+      "options": []
+    },
+    {
+      "id": "nota_obtenida",
+      "name": "Calificación literal de la asignatura",
+      "type": "categorical",
+      "question": "¿Qué calificación obtuvo en la asignatura?",
+      "options": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "F"
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "id": "reg_calificacion_a",
+      "description": "Clasificación de calificación A (91-100)",
+      "priority": 10,
+      "conditions": [
+        {
+          "attribute_id": "tipo_consulta",
+          "operator": "==",
+          "value": "Calificacion"
+        },
+        {
+          "attribute_id": "puntaje_final",
+          "operator": ">=",
+          "value": 91
+        },
+        {
+          "attribute_id": "puntaje_final",
+          "operator": "<=",
+          "value": 100
+        }
+      ],
+      "conclusion": {
+        "attribute_id": "dictamen",
+        "value": "Calificación A - Sobresaliente"
+      },
+      "explanation_template": "El puntaje ingresado se encuentra entre 91 y 100, por lo que corresponde a la calificación A (Sobresaliente)."
+    },
+    {
+      "id": "reg_calificacion_b",
+      "description": "Clasificación de calificación B (81-90)",
+      "priority": 10,
+      "conditions": [
+        {
+          "attribute_id": "tipo_consulta",
+          "operator": "==",
+          "value": "Calificacion"
+        },
+        {
+          "attribute_id": "puntaje_final",
+          "operator": ">=",
+          "value": 81
+        },
+        {
+          "attribute_id": "puntaje_final",
+          "operator": "<=",
+          "value": 90
+        }
+      ],
+      "conclusion": {
+        "attribute_id": "dictamen",
+        "value": "Calificación B - Bueno"
+      },
+      "explanation_template": "El puntaje ingresado se encuentra entre 81 y 90, por lo que corresponde a la calificación B (Bueno)."
+    },
+    {
+      "id": "reg_calificacion_c",
+      "description": "Clasificación de calificación C (71-80)",
+      "priority": 10,
+      "conditions": [
+        {
+          "attribute_id": "tipo_consulta",
+          "operator": "==",
+          "value": "Calificacion"
+        },
+        {
+          "attribute_id": "puntaje_final",
+          "operator": ">=",
+          "value": 71
+        },
+        {
+          "attribute_id": "puntaje_final",
+          "operator": "<=",
+          "value": 80
+        }
+      ],
+      "conclusion": {
+        "attribute_id": "dictamen",
+        "value": "Calificación C - Regular"
+      },
+      "explanation_template": "El puntaje ingresado se encuentra entre 71 y 80, por lo que corresponde a la calificación C (Regular)."
+    },
+    {
+      "id": "reg_calificacion_d",
+      "description": "Clasificación de calificación D (61-70)",
+      "priority": 10,
+      "conditions": [
+        {
+          "attribute_id": "tipo_consulta",
+          "operator": "==",
+          "value": "Calificacion"
+        },
+        {
+          "attribute_id": "puntaje_final",
+          "operator": ">=",
+          "value": 61
+        },
+        {
+          "attribute_id": "puntaje_final",
+          "operator": "<=",
+          "value": 70
+        }
+      ],
+      "conclusion": {
+        "attribute_id": "dictamen",
+        "value": "Calificación D - Mínima de promoción"
+      },
+      "explanation_template": "El puntaje ingresado se encuentra entre 61 y 70, por lo que corresponde a la calificación D (Mínima de promoción)."
+    },
+    {
+      "id": "reg_calificacion_f",
+      "description": "Clasificación de calificación F (0-60)",
+      "priority": 10,
+      "conditions": [
+        {
+          "attribute_id": "tipo_consulta",
+          "operator": "==",
+          "value": "Calificacion"
+        },
+        {
+          "attribute_id": "puntaje_final",
+          "operator": ">=",
+          "value": 0
+        },
+        {
+          "attribute_id": "puntaje_final",
+          "operator": "<=",
+          "value": 60
+        }
+      ],
+      "conclusion": {
+        "attribute_id": "dictamen",
+        "value": "Calificación F - Fracaso"
+      },
+      "explanation_template": "El puntaje ingresado se encuentra entre 0 y 60, por lo que corresponde a la calificación F (Fracaso)."
+    },
+    {
+      "id": "reg_repeticion_a",
+      "description": "Evaluación de repetición de asignatura con calificación A",
+      "priority": 20,
+      "conditions": [
+        {
+          "attribute_id": "tipo_consulta",
+          "operator": "==",
+          "value": "Repeticion"
+        },
+        {
+          "attribute_id": "nota_obtenida",
+          "operator": "==",
+          "value": "A"
+        }
+      ],
+      "conclusion": {
+        "attribute_id": "dictamen",
+        "value": "La calificación A no cumple el criterio de nota D o F para repetir con el fin de mejorar el índice."
+      },
+      "explanation_template": "La calificación A no cumple el criterio definido de nota D o F para repetir la asignatura con el propósito de mejorar el índice académico."
+    },
+    {
+      "id": "reg_repeticion_b",
+      "description": "Evaluación de repetición de asignatura con calificación B",
+      "priority": 20,
+      "conditions": [
+        {
+          "attribute_id": "tipo_consulta",
+          "operator": "==",
+          "value": "Repeticion"
+        },
+        {
+          "attribute_id": "nota_obtenida",
+          "operator": "==",
+          "value": "B"
+        }
+      ],
+      "conclusion": {
+        "attribute_id": "dictamen",
+        "value": "La calificación B no cumple el criterio de nota D o F para repetir con el fin de mejorar el índice."
+      },
+      "explanation_template": "La calificación B no cumple el criterio definido de nota D o F para repetir la asignatura con el propósito de mejorar el índice académico."
+    },
+    {
+      "id": "reg_repeticion_c",
+      "description": "Evaluación de repetición de asignatura con calificación C",
+      "priority": 20,
+      "conditions": [
+        {
+          "attribute_id": "tipo_consulta",
+          "operator": "==",
+          "value": "Repeticion"
+        },
+        {
+          "attribute_id": "nota_obtenida",
+          "operator": "==",
+          "value": "C"
+        }
+      ],
+      "conclusion": {
+        "attribute_id": "dictamen",
+        "value": "La calificación C no cumple el criterio de nota D o F para repetir con el fin de mejorar el índice."
+      },
+      "explanation_template": "La calificación C no cumple el criterio definido de nota D o F para repetir la asignatura con el propósito de mejorar el índice académico."
+    },
+    {
+      "id": "reg_repeticion_d",
+      "description": "Evaluación de repetición de asignatura con calificación D",
+      "priority": 20,
+      "conditions": [
+        {
+          "attribute_id": "tipo_consulta",
+          "operator": "==",
+          "value": "Repeticion"
+        },
+        {
+          "attribute_id": "nota_obtenida",
+          "operator": "==",
+          "value": "D"
+        }
+      ],
+      "conclusion": {
+        "attribute_id": "dictamen",
+        "value": "La calificación D cumple el criterio de nota D o F para repetir con el fin de mejorar el índice."
+      },
+      "explanation_template": "La calificación D cumple el criterio definido para repetir la asignatura con el propósito de mejorar el índice académico."
+    },
+    {
+      "id": "reg_repeticion_f",
+      "description": "Evaluación de repetición de asignatura con calificación F",
+      "priority": 20,
+      "conditions": [
+        {
+          "attribute_id": "tipo_consulta",
+          "operator": "==",
+          "value": "Repeticion"
+        },
+        {
+          "attribute_id": "nota_obtenida",
+          "operator": "==",
+          "value": "F"
+        }
+      ],
+      "conclusion": {
+        "attribute_id": "dictamen",
+        "value": "La calificación F cumple el criterio de nota D o F para repetir con el fin de mejorar el índice."
+      },
+      "explanation_template": "La calificación F cumple el criterio definido para repetir la asignatura con el propósito de mejorar el índice académico."
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "session_id": "sesion_calificacion_001",
+  "facts": {
+    "tipo_consulta": "Calificacion",
+    "puntaje_final": 85
+  },
+  "derived_facts": {
+    "dictamen": {
+      "value": "Calificación B - Bueno",
+      "derived_by_rule": "reg_calificacion_b"
+    }
+  },
+  "execution_trace": [
+    {
+      "step": 1,
+      "rule_fired": "reg_calificacion_b",
+      "added_fact": "dictamen"
+    }
+  ]
+}

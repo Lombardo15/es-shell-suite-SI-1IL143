@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Estructura de memoria de trabajo",
+  "description": "Estructura para hechos conocidos, hechos derivados y traza de una sesión.",
+  "type": "object",
+  "required": [
+    "session_id",
+    "facts",
+    "derived_facts",
+    "execution_trace"
+  ],
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "facts": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "derived_facts": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "value",
+          "derived_by_rule"
+        ],
+        "properties": {
+          "value": {},
+          "derived_by_rule": {
+            "type": "string",
+            "minLength": 1
+          },
+          "certainty_factor": {
+            "type": "number",
+            "minimum": -1,
+            "maximum": 1
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "execution_trace": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "step",
+          "rule_fired",
+          "added_fact"
+        ],
+        "properties": {
+          "step": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "rule_fired": {
+            "type": "string",
+            "minLength": 1
+          },
+          "added_fact": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}
