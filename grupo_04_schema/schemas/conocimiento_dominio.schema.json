@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Estructura de conocimiento del dominio",
-  "description": "Estructura y restricciones para validar bases de conocimiento.",
+  "description": "Contrato JSON de conocimiento del dominio para ES-Shell Suite. Propuesta G4/G1 pendiente de aprobación de coordinadores.",
   "type": "object",
   "required": [
     "meta",
@@ -40,8 +40,7 @@
         "required": [
           "id",
           "name",
-          "type",
-          "question"
+          "type"
         ],
         "properties": {
           "id": {
@@ -54,7 +53,12 @@
           },
           "type": {
             "type": "string",
-            "minLength": 1
+            "enum": [
+              "numeric",
+              "categorical",
+              "boolean",
+              "text"
+            ]
           },
           "question": {
             "type": "string",
@@ -74,26 +78,16 @@
               "type": "string"
             },
             "uniqueItems": true
+          },
+          "depends_on": {
+            "$ref": "#/$defs/condition"
+          },
+          "help_text": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "allOf": [
-          {
-            "if": {
-              "properties": {
-                "type": {
-                  "const": "numeric"
-                }
-              },
-              "required": [
-                "type"
-              ]
-            },
-            "then": {
-              "required": [
-                "range"
-              ]
-            }
-          },
           {
             "if": {
               "properties": {
@@ -149,24 +143,7 @@
             "type": "array",
             "minItems": 1,
             "items": {
-              "type": "object",
-              "required": [
-                "attribute_id",
-                "operator",
-                "value"
-              ],
-              "properties": {
-                "attribute_id": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "operator": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "value": {}
-              },
-              "additionalProperties": true
+              "$ref": "#/$defs/condition"
             }
           },
           "conclusion": {
@@ -192,5 +169,85 @@
       }
     }
   },
-  "additionalProperties": true
+  "additionalProperties": true,
+  "$defs": {
+    "condition": {
+      "type": "object",
+      "required": [
+        "attribute_id",
+        "operator",
+        "value"
+      ],
+      "properties": {
+        "attribute_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "operator": {
+          "type": "string",
+          "enum": [
+            "==",
+            "!=",
+            ">",
+            "<",
+            ">=",
+            "<=",
+            "in"
+          ]
+        },
+        "value": {}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "operator": {
+                "const": "in"
+              }
+            },
+            "required": [
+              "operator"
+            ]
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": "array",
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operator": {
+                "enum": [
+                  "==",
+                  "!=",
+                  ">",
+                  "<",
+                  ">=",
+                  "<="
+                ]
+              }
+            },
+            "required": [
+              "operator"
+            ]
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "not": {
+                  "type": "array"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "additionalProperties": true
+    }
+  }
 }

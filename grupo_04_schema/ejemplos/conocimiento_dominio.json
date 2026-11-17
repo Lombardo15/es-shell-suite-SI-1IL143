@@ -70,7 +70,7 @@
     },
     {
       "id": "reg_calificacion_b",
-      "description": "Clasificación de calificación B (81-90)",
+      "description": "Clasificación de calificación B (81 <= puntaje < 91)",
       "priority": 10,
       "conditions": [
         {
@@ -85,19 +85,19 @@
         },
         {
           "attribute_id": "puntaje_final",
-          "operator": "<=",
-          "value": 90
+          "operator": "<",
+          "value": 91
         }
       ],
       "conclusion": {
         "attribute_id": "dictamen",
         "value": "Calificación B - Bueno"
       },
-      "explanation_template": "El puntaje ingresado se encuentra entre 81 y 90, por lo que corresponde a la calificación B (Bueno)."
+      "explanation_template": "El puntaje ingresado se encuentra desde 81 (incluido) hasta 91 (sin incluir), por lo que corresponde a la calificación B (Bueno)."
     },
     {
       "id": "reg_calificacion_c",
-      "description": "Clasificación de calificación C (71-80)",
+      "description": "Clasificación de calificación C (71 <= puntaje < 81)",
       "priority": 10,
       "conditions": [
         {
@@ -112,19 +112,19 @@
         },
         {
           "attribute_id": "puntaje_final",
-          "operator": "<=",
-          "value": 80
+          "operator": "<",
+          "value": 81
         }
       ],
       "conclusion": {
         "attribute_id": "dictamen",
         "value": "Calificación C - Regular"
       },
-      "explanation_template": "El puntaje ingresado se encuentra entre 71 y 80, por lo que corresponde a la calificación C (Regular)."
+      "explanation_template": "El puntaje ingresado se encuentra desde 71 (incluido) hasta 81 (sin incluir), por lo que corresponde a la calificación C (Regular)."
     },
     {
       "id": "reg_calificacion_d",
-      "description": "Clasificación de calificación D (61-70)",
+      "description": "Clasificación de calificación D (61 <= puntaje < 71)",
       "priority": 10,
       "conditions": [
         {
@@ -139,19 +139,19 @@
         },
         {
           "attribute_id": "puntaje_final",
-          "operator": "<=",
-          "value": 70
+          "operator": "<",
+          "value": 71
         }
       ],
       "conclusion": {
         "attribute_id": "dictamen",
         "value": "Calificación D - Mínima de promoción"
       },
-      "explanation_template": "El puntaje ingresado se encuentra entre 61 y 70, por lo que corresponde a la calificación D (Mínima de promoción)."
+      "explanation_template": "El puntaje ingresado se encuentra desde 61 (incluido) hasta 71 (sin incluir), por lo que corresponde a la calificación D (Mínima de promoción)."
     },
     {
       "id": "reg_calificacion_f",
-      "description": "Clasificación de calificación F (0-60)",
+      "description": "Clasificación de calificación F (0 <= puntaje < 61)",
       "priority": 10,
       "conditions": [
         {
@@ -166,15 +166,15 @@
         },
         {
           "attribute_id": "puntaje_final",
-          "operator": "<=",
-          "value": 60
+          "operator": "<",
+          "value": 61
         }
       ],
       "conclusion": {
         "attribute_id": "dictamen",
         "value": "Calificación F - Fracaso"
       },
-      "explanation_template": "El puntaje ingresado se encuentra entre 0 y 60, por lo que corresponde a la calificación F (Fracaso)."
+      "explanation_template": "El puntaje ingresado se encuentra desde 0 (incluido) hasta 61 (sin incluir), por lo que corresponde a la calificación F (Fracaso)."
     },
     {
       "id": "reg_repeticion_a",

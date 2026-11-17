@@ -68,6 +68,8 @@ class SchemaManager:
 
         if not errores and tipo == "conocimiento_dominio":
             errores.extend(self.validar_conocimiento(datos))
+            errores.extend(self.validar_condiciones(datos))
+            errores.extend(self.validar_dependencias_circulares(datos))
             errores.extend(self.validar_version(datos))
 
         return {
@@ -98,13 +100,16 @@ class SchemaManager:
             # Comprobar que los rangos numéricos sean correctos.
             if atributo["type"] == "numeric":
 
-                minimo, maximo = atributo["range"]
+                rango = atributo.get("range")
 
-                if minimo > maximo:
-                    errores.append(
-                        f"$.attributes[{i}].range: "
-                        "El valor mínimo no puede superar al máximo."
-                    )
+                if rango is not None:
+                    minimo, maximo = rango
+
+                    if minimo >= maximo:
+                        errores.append(
+                            f"$.attributes[{i}].range: "
+                            "El valor mínimo debe ser menor que el máximo."
+                        )
 
         # Comprobar identificadores de reglas repetidos.
         reglas = set()
@@ -131,6 +136,200 @@ class SchemaManager:
                         f"$.rules[{i}].conditions[{j}].attribute_id: "
                         f"El atributo '{atributo_id}' no existe."
                     )
+
+        return errores
+
+    def validar_condiciones(self, conocimiento):
+
+        errores = []
+
+        atributos = {
+            atributo["id"]: atributo
+            for atributo in conocimiento["attributes"]
+        }
+
+        operadores_orden = {">", "<", ">=", "<="}
+
+        def comprobar_condicion(condicion, ruta):
+
+            atributo_id = condicion["attribute_id"]
+            operador = condicion["operator"]
+            valor = condicion["value"]
+
+            # Comprobar que el atributo exista.
+            if atributo_id not in atributos:
+                errores.append(
+                    f"{ruta}.attribute_id: "
+                    f"El atributo '{atributo_id}' no existe."
+                )
+                return
+
+            atributo = atributos[atributo_id]
+            tipo = atributo["type"]
+
+            # Los operadores de orden requieren números.
+            if operador in operadores_orden and tipo != "numeric":
+                errores.append(
+                    f"{ruta}.operator: "
+                    f"El operador '{operador}' requiere "
+                    "un atributo numérico."
+                )
+
+            # El operador 'in' utiliza una lista.
+            if operador == "in":
+                valores = valor
+            else:
+                valores = [valor]
+
+            # Comprobar cada valor de la condición.
+            for indice, elemento in enumerate(valores):
+
+                ruta_valor = (
+                    f"{ruta}.value[{indice}]"
+                    if operador == "in"
+                    else f"{ruta}.value"
+                )
+
+                if tipo == "numeric":
+
+                    if type(elemento) not in (int, float):
+                        errores.append(
+                            f"{ruta_valor}: "
+                            "Se esperaba un número."
+                        )
+
+                elif tipo == "categorical":
+
+                    if not isinstance(elemento, str):
+                        errores.append(
+                            f"{ruta_valor}: "
+                            "Se esperaba un texto."
+                        )
+
+                    elif elemento not in atributo["options"]:
+                        errores.append(
+                            f"{ruta_valor}: "
+                            f"El valor '{elemento}' "
+                            "no está entre las opciones permitidas."
+                        )
+
+                elif tipo == "boolean":
+
+                    if not isinstance(elemento, bool):
+                        errores.append(
+                            f"{ruta_valor}: "
+                            "Se esperaba true o false."
+                        )
+
+                elif tipo == "text":
+
+                    if not isinstance(elemento, str):
+                        errores.append(
+                            f"{ruta_valor}: "
+                            "Se esperaba un texto."
+                        )
+
+        # Validar las condiciones de todas las reglas.
+        for i, regla in enumerate(conocimiento["rules"]):
+
+            for j, condicion in enumerate(regla["conditions"]):
+
+                comprobar_condicion(
+                    condicion,
+                    f"$.rules[{i}].conditions[{j}]"
+                )
+
+        # Validar las dependencias entre preguntas.
+        for i, atributo in enumerate(conocimiento["attributes"]):
+
+            dependencia = atributo.get("depends_on")
+
+            if dependencia is None:
+                continue
+
+            ruta = f"$.attributes[{i}].depends_on"
+
+            # Evitar que una pregunta dependa de sí misma.
+            if dependencia["attribute_id"] == atributo["id"]:
+                errores.append(
+                    f"{ruta}: Un atributo no puede "
+                    "depender de sí mismo."
+                )
+
+            comprobar_condicion(dependencia, ruta)
+
+        return errores
+
+    def validar_dependencias_circulares(self, conocimiento):
+
+        errores = []
+
+        atributos = conocimiento["attributes"]
+
+        ids = {
+            atributo["id"]
+            for atributo in atributos
+        }
+
+        # Relacionar cada atributo con aquel del que depende.
+        dependencias = {}
+
+        for atributo in atributos:
+
+            dependencia = atributo.get("depends_on")
+
+            if dependencia is None:
+                continue
+
+            origen = atributo["id"]
+            destino = dependencia["attribute_id"]
+
+            # Las referencias inexistentes se validan en otro método.
+            if destino not in ids:
+                continue
+
+            # Las dependencias hacia sí mismo ya se detectan
+            # mediante validar_condiciones().
+            if origen == destino:
+                continue
+
+            dependencias[origen] = destino
+
+        revisados = set()
+
+        # Buscar ciclos entre atributos.
+        for inicio in dependencias:
+
+            if inicio in revisados:
+                continue
+
+            camino = []
+            posiciones = {}
+            actual = inicio
+
+            while actual in dependencias and actual not in revisados:
+
+                if actual in posiciones:
+
+                    ciclo = (
+                        camino[posiciones[actual]:]
+                        + [actual]
+                    )
+
+                    errores.append(
+                        "$.attributes: Dependencia circular detectada: "
+                        + " -> ".join(ciclo)
+                        + "."
+                    )
+
+                    break
+
+                posiciones[actual] = len(camino)
+                camino.append(actual)
+
+                actual = dependencias[actual]
+
+            revisados.update(camino)
 
         return errores
 
@@ -262,7 +461,24 @@ class SchemaManager:
             "valido": len(errores) == 0,
             "errores": errores
         }
-    
+
+    def validar_completitud(self, memoria, atributos_requeridos):
+
+        faltantes = []
+
+        # Obtener los hechos disponibles.
+        hechos = memoria["facts"]
+
+        # Comprobar qué atributos todavía no tienen respuesta.
+        for atributo in atributos_requeridos:
+
+            if atributo not in hechos:
+                faltantes.append(atributo)
+
+        return {
+            "completa": len(faltantes) == 0,
+            "faltantes": faltantes
+        }
     
     def validar_traza(self, memoria, conocimiento):
 

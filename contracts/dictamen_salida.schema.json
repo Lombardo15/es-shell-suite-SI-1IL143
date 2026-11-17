@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Estructura de dictamen de salida",
+  "description": "Resultado y explicaciones HOW/WHY de una consulta.",
+  "type": "object",
+  "required": [
+    "session_id",
+    "final_outcome",
+    "explanation_how",
+    "explanation_why"
+  ],
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "final_outcome": {
+      "type": "string",
+      "minLength": 1
+    },
+    "certainty_score": {
+      "type": "number"
+    },
+    "explanation_how": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "explanation_why": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": true
+}
