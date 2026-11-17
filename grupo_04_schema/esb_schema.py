@@ -1,744 +1,474 @@
+"""Validación de contratos JSON y consistencia de sesiones de ES-Shell Suite.
+
+La clase no ejecuta reglas ni decide qué preguntas debe hacer el sistema.
+Los esquemas compartidos se mantienen en archivos JSON independientes.
+"""
+
 import json
+import math
 from pathlib import Path
+from threading import RLock
 
 from jsonschema import Draft202012Validator, FormatChecker
 from jsonschema.exceptions import SchemaError
 
+
 class SchemaManager:
+    """Carga y valida conocimiento, memoria de trabajo y dictámenes."""
 
     ESQUEMAS = {
         "conocimiento_dominio": "conocimiento_dominio.schema.json",
         "memoria_trabajo": "memoria_trabajo.schema.json",
-        "dictamen_salida": "dictamen_salida.schema.json"
+        "dictamen_salida": "dictamen_salida.schema.json",
     }
+    OPERADORES_ORDEN = frozenset({">", "<", ">=", "<="})
 
     def __init__(self, carpeta_esquemas=None, versiones_admitidas=None):
+        carpeta = (
+            Path(carpeta_esquemas)
+            if carpeta_esquemas is not None
+            else Path(__file__).resolve().parent / "schemas"
+        )
+        self.carpeta_esquemas = carpeta.resolve()
+        # Máximo tres esquemas en memoria. Se regeneran si cambia el archivo.
+        self._cache_validadores = {}
+        self._cache_lock = RLock()
 
-        if carpeta_esquemas is None:
-            self.carpeta_esquemas = Path(__file__).resolve().parent / "schemas"
+        if isinstance(versiones_admitidas, str):
+            self.versiones_admitidas = {versiones_admitidas}
+        elif versiones_admitidas is None:
+            self.versiones_admitidas = None
         else:
-            self.carpeta_esquemas = Path(carpeta_esquemas).resolve()
-
-        self.versiones_admitidas = (
-            set(versiones_admitidas)
-            if versiones_admitidas is not None 
-            else None)
+            self.versiones_admitidas = set(versiones_admitidas)
 
     @staticmethod
     def cargar_json(ruta):
+        """Carga un JSON en UTF-8 (también acepta BOM)."""
+        def rechazar_constante(valor):
+            # json.load() admite NaN e Infinity por defecto, pero no son JSON estándar.
+            raise ValueError(f"Constante numérica no válida en JSON: {valor}")
 
         with open(ruta, "r", encoding="utf-8-sig") as archivo:
-            datos = json.load(archivo)
+            return json.load(archivo, parse_constant=rechazar_constante)
 
-        return datos
+    @staticmethod
+    def _resultado(errores):
+        """Estructura pública común de resultados de validación."""
+        errores = list(dict.fromkeys(errores))
+        return {"valido": not errores, "errores": errores}
+
+    @staticmethod
+    def _ruta_error(error):
+        """Representa la ubicación de un error de JSON Schema."""
+        ruta = "$"
+        for segmento in error.absolute_path:
+            if isinstance(segmento, int):
+                ruta += f"[{segmento}]"
+            else:
+                ruta += f".{segmento}"
+        return ruta
+
+    def _obtener_validador(self, tipo):
+        """Reutiliza el esquema compilado y lo recarga si cambia en disco.
+
+        La firma (mtime_ns, tamaño) evita reabrir el JSON y ejecutar
+        check_schema() en cada validación. El bloqueo protege la caché
+        cuando distintos módulos llaman al gestor desde varios hilos.
+        """
+        ruta = self.carpeta_esquemas / self.ESQUEMAS[tipo]
+
+        with self._cache_lock:
+            estado = ruta.stat()  # FileNotFoundError se propaga al llamador.
+            firma = (estado.st_mtime_ns, estado.st_size)
+            entrada = self._cache_validadores.get(tipo)
+            if entrada is not None and entrada[0] == (ruta, firma):
+                return entrada[1]
+
+            esquema = self.cargar_json(ruta)
+            Draft202012Validator.check_schema(esquema)
+            validador = Draft202012Validator(
+                esquema, format_checker=FormatChecker()
+            )
+            self._cache_validadores[tipo] = ((ruta, firma), validador)
+            return validador
+
+    def limpiar_cache_esquemas(self):
+        """Invalida la caché cuando se necesita recargar manualmente."""
+        with self._cache_lock:
+            self._cache_validadores.clear()
 
     def validar_datos(self, datos, tipo):
+        """Valida un documento mediante su esquema y reglas semánticas.
 
-        # Comprobar que conocemos el tipo de archivo.
+        Devuelve {'valido': bool, 'errores': list[str]}.
+        Los validadores se guardan en caché y se renuevan al cambiar
+        el archivo del esquema (fecha de modificación o tamaño).
+        Los errores de configuración del esquema se propagan al llamador;
+        validar_archivo() los convierte a mensajes para el usuario.
+        """
         if tipo not in self.ESQUEMAS:
             raise ValueError(f"Tipo de contrato desconocido: {tipo}")
 
-        # Buscar y cargar el esquema correspondiente.
-        ruta_esquema = self.carpeta_esquemas / self.ESQUEMAS[tipo]
-        esquema = self.cargar_json(ruta_esquema)
+        validador = self._obtener_validador(tipo)
 
-        # Verificar que el esquema esté bien definido.
-        Draft202012Validator.check_schema(esquema)
-
-        # Crear el validador.
-        validador = Draft202012Validator(
-            esquema,
-            format_checker=FormatChecker()
+        errores = sorted(
+            f"{self._ruta_error(error)}: {error.message}"
+            for error in validador.iter_errors(datos)
         )
 
-        errores = []
-
-        # Revisar todos los errores encontrados.
-        for error in validador.iter_errors(datos):
-
-            ubicacion = "$"
-
-            for parte in error.absolute_path:
-                if isinstance(parte, int):
-                    ubicacion += f"[{parte}]"
-                else:
-                    ubicacion += f".{parte}"
-
-            errores.append(f"{ubicacion}: {error.message}")
-
+        # Evita acceder a campos que podrían faltar o tener tipos incorrectos.
         if not errores and tipo == "conocimiento_dominio":
             errores.extend(self.validar_conocimiento(datos))
             errores.extend(self.validar_condiciones(datos))
             errores.extend(self.validar_dependencias_circulares(datos))
             errores.extend(self.validar_version(datos))
 
-        return {
-            "valido": len(errores) == 0,
-            "errores": sorted(errores)
-        }
+        return self._resultado(sorted(errores))
 
     @staticmethod
     def validar_conocimiento(datos):
-
+        """Comprueba identificadores, referencias y rangos numéricos."""
         errores = []
-
-        # Comprobar identificadores de atributos repetidos.
         atributos = set()
 
         for i, atributo in enumerate(datos["attributes"]):
-
             identificador = atributo["id"]
-
             if identificador in atributos:
                 errores.append(
-                    f"$.attributes[{i}].id: "
-                    f"El atributo '{identificador}' está repetido."
+                    f"$.attributes[{i}].id: El atributo '{identificador}' está repetido."
                 )
-
             atributos.add(identificador)
 
-            # Comprobar que los rangos numéricos sean correctos.
             if atributo["type"] == "numeric":
-
                 rango = atributo.get("range")
-
                 if rango is not None:
                     minimo, maximo = rango
-
                     if minimo >= maximo:
                         errores.append(
                             f"$.attributes[{i}].range: "
                             "El valor mínimo debe ser menor que el máximo."
                         )
 
-        # Comprobar identificadores de reglas repetidos.
         reglas = set()
-
         for i, regla in enumerate(datos["rules"]):
-
             identificador = regla["id"]
-
             if identificador in reglas:
                 errores.append(
-                    f"$.rules[{i}].id: "
-                    f"La regla '{identificador}' está repetida."
+                    f"$.rules[{i}].id: La regla '{identificador}' está repetida."
                 )
-
             reglas.add(identificador)
 
-            # Comprobar las referencias de las condiciones.
             for j, condicion in enumerate(regla["conditions"]):
-
                 atributo_id = condicion["attribute_id"]
-
                 if atributo_id not in atributos:
                     errores.append(
                         f"$.rules[{i}].conditions[{j}].attribute_id: "
                         f"El atributo '{atributo_id}' no existe."
                     )
-
         return errores
 
+    @staticmethod
+    def _comprobar_valor(atributo, valor, ruta, comprobar_rango=False):
+        """Comprueba un valor sin ejecutar reglas de inferencia."""
+        tipo = atributo["type"]
+        if tipo == "numeric":
+            if type(valor) not in (int, float):
+                return [f"{ruta}: Se esperaba un número."]
+            if isinstance(valor, float) and not math.isfinite(valor):
+                return [f"{ruta}: Se esperaba un número finito."]
+            if comprobar_rango:
+                limites = atributo.get("range")
+                if limites is not None and not limites[0] <= valor <= limites[1]:
+                    return [
+                        f"{ruta}: El valor {valor} está fuera del rango {limites}."
+                    ]
+        elif tipo == "categorical":
+            if not isinstance(valor, str):
+                return [f"{ruta}: Se esperaba un texto."]
+            if valor not in atributo["options"]:
+                return [
+                    f"{ruta}: El valor '{valor}' no está entre las opciones permitidas."
+                ]
+        elif tipo == "boolean" and not isinstance(valor, bool):
+            return [f"{ruta}: Se esperaba true o false."]
+        elif tipo == "text" and not isinstance(valor, str):
+            return [f"{ruta}: Se esperaba un texto."]
+        return []
+
     def validar_condiciones(self, conocimiento):
-
+        """Comprueba tipos y referencias en reglas y preguntas condicionales."""
         errores = []
-
-        atributos = {
-            atributo["id"]: atributo
-            for atributo in conocimiento["attributes"]
-        }
-
-        operadores_orden = {">", "<", ">=", "<="}
+        atributos = {a["id"]: a for a in conocimiento["attributes"]}
 
         def comprobar_condicion(condicion, ruta):
-
             atributo_id = condicion["attribute_id"]
-            operador = condicion["operator"]
-            valor = condicion["value"]
-
-            # Comprobar que el atributo exista.
             if atributo_id not in atributos:
                 errores.append(
-                    f"{ruta}.attribute_id: "
-                    f"El atributo '{atributo_id}' no existe."
+                    f"{ruta}.attribute_id: El atributo '{atributo_id}' no existe."
                 )
                 return
 
             atributo = atributos[atributo_id]
-            tipo = atributo["type"]
-
-            # Los operadores de orden requieren números.
-            if operador in operadores_orden and tipo != "numeric":
+            operador = condicion["operator"]
+            if operador in self.OPERADORES_ORDEN and atributo["type"] != "numeric":
                 errores.append(
-                    f"{ruta}.operator: "
-                    f"El operador '{operador}' requiere "
-                    "un atributo numérico."
+                    f"{ruta}.operator: El operador '{operador}' "
+                    "requiere un atributo numérico."
                 )
 
-            # El operador 'in' utiliza una lista.
-            if operador == "in":
-                valores = valor
-            else:
-                valores = [valor]
-
-            # Comprobar cada valor de la condición.
+            valor = condicion["value"]
+            valores = valor if operador == "in" else [valor]
             for indice, elemento in enumerate(valores):
-
                 ruta_valor = (
-                    f"{ruta}.value[{indice}]"
-                    if operador == "in"
-                    else f"{ruta}.value"
+                    f"{ruta}.value[{indice}]" if operador == "in" else f"{ruta}.value"
                 )
+                errores.extend(self._comprobar_valor(atributo, elemento, ruta_valor))
 
-                if tipo == "numeric":
-
-                    if type(elemento) not in (int, float):
-                        errores.append(
-                            f"{ruta_valor}: "
-                            "Se esperaba un número."
-                        )
-
-                elif tipo == "categorical":
-
-                    if not isinstance(elemento, str):
-                        errores.append(
-                            f"{ruta_valor}: "
-                            "Se esperaba un texto."
-                        )
-
-                    elif elemento not in atributo["options"]:
-                        errores.append(
-                            f"{ruta_valor}: "
-                            f"El valor '{elemento}' "
-                            "no está entre las opciones permitidas."
-                        )
-
-                elif tipo == "boolean":
-
-                    if not isinstance(elemento, bool):
-                        errores.append(
-                            f"{ruta_valor}: "
-                            "Se esperaba true o false."
-                        )
-
-                elif tipo == "text":
-
-                    if not isinstance(elemento, str):
-                        errores.append(
-                            f"{ruta_valor}: "
-                            "Se esperaba un texto."
-                        )
-
-        # Validar las condiciones de todas las reglas.
         for i, regla in enumerate(conocimiento["rules"]):
-
             for j, condicion in enumerate(regla["conditions"]):
+                comprobar_condicion(condicion, f"$.rules[{i}].conditions[{j}]")
 
-                comprobar_condicion(
-                    condicion,
-                    f"$.rules[{i}].conditions[{j}]"
-                )
-
-        # Validar las dependencias entre preguntas.
         for i, atributo in enumerate(conocimiento["attributes"]):
-
             dependencia = atributo.get("depends_on")
-
             if dependencia is None:
                 continue
-
             ruta = f"$.attributes[{i}].depends_on"
-
-            # Evitar que una pregunta dependa de sí misma.
             if dependencia["attribute_id"] == atributo["id"]:
-                errores.append(
-                    f"{ruta}: Un atributo no puede "
-                    "depender de sí mismo."
-                )
-
+                errores.append(f"{ruta}: Un atributo no puede depender de sí mismo.")
             comprobar_condicion(dependencia, ruta)
-
         return errores
 
-    def validar_dependencias_circulares(self, conocimiento):
-
+    @staticmethod
+    def validar_dependencias_circulares(conocimiento):
+        """Detecta ciclos en depends_on, incluso de tres o más atributos."""
         errores = []
-
-        atributos = conocimiento["attributes"]
-
-        ids = {
-            atributo["id"]
-            for atributo in atributos
-        }
-
-        # Relacionar cada atributo con aquel del que depende.
+        ids = {atributo["id"] for atributo in conocimiento["attributes"]}
         dependencias = {}
 
-        for atributo in atributos:
-
+        for atributo in conocimiento["attributes"]:
             dependencia = atributo.get("depends_on")
-
             if dependencia is None:
                 continue
-
-            origen = atributo["id"]
-            destino = dependencia["attribute_id"]
-
-            # Las referencias inexistentes se validan en otro método.
-            if destino not in ids:
-                continue
-
-            # Las dependencias hacia sí mismo ya se detectan
-            # mediante validar_condiciones().
-            if origen == destino:
-                continue
-
-            dependencias[origen] = destino
+            origen, destino = atributo["id"], dependencia["attribute_id"]
+            if destino in ids and origen != destino:
+                dependencias[origen] = destino
 
         revisados = set()
-
-        # Buscar ciclos entre atributos.
         for inicio in dependencias:
-
             if inicio in revisados:
                 continue
-
-            camino = []
-            posiciones = {}
+            camino, posiciones = [], {}
             actual = inicio
-
             while actual in dependencias and actual not in revisados:
-
                 if actual in posiciones:
-
-                    ciclo = (
-                        camino[posiciones[actual]:]
-                        + [actual]
-                    )
-
+                    ciclo = camino[posiciones[actual]:] + [actual]
                     errores.append(
                         "$.attributes: Dependencia circular detectada: "
-                        + " -> ".join(ciclo)
-                        + "."
+                        + " -> ".join(ciclo) + "."
                     )
-
                     break
-
                 posiciones[actual] = len(camino)
                 camino.append(actual)
-
                 actual = dependencias[actual]
-
             revisados.update(camino)
-
         return errores
 
     def validar_version(self, datos):
-
-        errores = []
-
-        # Obtener la versión de la base de conocimiento.
+        """Comprueba meta.version y, opcionalmente, versiones admitidas."""
         version = datos.get("meta", {}).get("version")
-
-        # Comprobar que exista una versión válida.
         if not isinstance(version, str) or not version.strip():
-            errores.append(
-                "$.meta.version: La versión debe ser un texto no vacío."
-            )
+            return ["$.meta.version: La versión debe ser un texto no vacío."]
+        if (self.versiones_admitidas is not None
+                and version not in self.versiones_admitidas):
+            return [
+                f"$.meta.version: La versión '{version}' "
+                "no está entre las versiones admitidas."
+            ]
+        return []
 
-            return errores
-
-        # Comprobar si la versión está admitida.
-        if self.versiones_admitidas is not None:
-
-            if version not in self.versiones_admitidas:
-                errores.append(
-                    f"$.meta.version: La versión '{version}' "
-                    "no está entre las versiones admitidas."
-                )
-
-        return errores
-    
-    def validar_memoria(self, memoria, conocimiento):
-
+    def _validar_hechos(self, memoria, conocimiento):
+        """Valida hechos de una memoria ya verificada estructuralmente."""
         errores = []
-
-        # Primero comprobar las estructuras de ambos documentos.
-        resultado_conocimiento = self.validar_datos(
-            conocimiento, "conocimiento_dominio"
-        )
-
-        resultado_memoria = self.validar_datos(
-            memoria, "memoria_trabajo"
-        )
-
-        if not resultado_conocimiento["valido"]:
-            errores.extend(resultado_conocimiento["errores"])
-
-        if not resultado_memoria["valido"]:
-            errores.extend(resultado_memoria["errores"])
-
-        # No continuar si existen errores estructurales.
-        if errores:
-            return {
-                "valido": False,
-                "errores": errores
-            }
-
-        # Crear un diccionario con los atributos declarados.
-        atributos = {
-            atributo["id"]: atributo
-            for atributo in conocimiento["attributes"]
-        }
-
-        # Revisar cada hecho ingresado.
+        atributos = {a["id"]: a for a in conocimiento["attributes"]}
         for nombre, valor in memoria["facts"].items():
-
             ruta = f"$.facts.{nombre}"
-
-            # Comprobar que el atributo exista.
-            if nombre not in atributos:
+            atributo = atributos.get(nombre)
+            if atributo is None:
                 errores.append(
-                    f"{ruta}: El atributo no está declarado "
-                    "en la base de conocimiento."
+                    f"{ruta}: El atributo no está declarado en la base de conocimiento."
                 )
-                continue
-
-            atributo = atributos[nombre]
-            tipo = atributo["type"]
-
-            # Validar atributos numéricos.
-            if tipo == "numeric":
-
-                if type(valor) not in (int, float):
-                    errores.append(
-                        f"{ruta}: Se esperaba un número."
+            else:
+                errores.extend(
+                    self._comprobar_valor(
+                        atributo, valor, ruta, comprobar_rango=True
                     )
-                    continue
+                )
+        return errores
 
-                limites = atributo.get("range")
+    def validar_memoria(self, memoria, conocimiento):
+        """Valida hechos existentes; no exige una sesión completa."""
+        errores = (
+            self.validar_datos(conocimiento, "conocimiento_dominio")["errores"]
+            + self.validar_datos(memoria, "memoria_trabajo")["errores"]
+        )
+        if errores:
+            return self._resultado(errores)
+        return self._resultado(self._validar_hechos(memoria, conocimiento))
 
-                if limites is not None:
-                    minimo, maximo = limites
+    @staticmethod
+    def validar_completitud(memoria, atributos_requeridos):
+        """Comprueba presencia de claves en facts; no valida sus valores.
 
-                    if not minimo <= valor <= maximo:
-                        errores.append(
-                            f"{ruta}: El valor {valor} está "
-                            f"fuera del rango {limites}."
-                        )
-
-            # Validar atributos categóricos.
-            elif tipo == "categorical":
-
-                if not isinstance(valor, str):
-                    errores.append(
-                        f"{ruta}: Se esperaba un texto."
-                    )
-
-                elif valor not in atributo.get("options", []):
-                    errores.append(
-                        f"{ruta}: El valor '{valor}' no está "
-                        "entre las opciones permitidas."
-                    )
-
-            # Soporte para atributos booleanos.
-            elif tipo == "boolean":
-
-                if not isinstance(valor, bool):
-                    errores.append(
-                        f"{ruta}: Se esperaba true o false."
-                    )
-
-            # Soporte para atributos de texto.
-            elif tipo == "text":
-
-                if not isinstance(valor, str):
-                    errores.append(
-                        f"{ruta}: Se esperaba un texto."
-                    )
-
-        return {
-            "valido": len(errores) == 0,
-            "errores": errores
-        }
-
-    def validar_completitud(self, memoria, atributos_requeridos):
-
-        faltantes = []
-
-        # Obtener los hechos disponibles.
+        El módulo que gestiona la consulta decide qué atributos son requeridos.
+        """
         hechos = memoria["facts"]
+        faltantes = list(dict.fromkeys(
+            atributo for atributo in atributos_requeridos if atributo not in hechos
+        ))
+        return {"completa": not faltantes, "faltantes": faltantes}
 
-        # Comprobar qué atributos todavía no tienen respuesta.
-        for atributo in atributos_requeridos:
-
-            if atributo not in hechos:
-                faltantes.append(atributo)
-
-        return {
-            "completa": len(faltantes) == 0,
-            "faltantes": faltantes
-        }
-    
-    def validar_traza(self, memoria, conocimiento):
-
-        # Validar primero las estructuras y los hechos ingresados.
-        resultado = self.validar_memoria(memoria, conocimiento)
-
-        if not resultado["valido"]:
-            return resultado
-
+    @staticmethod
+    def _validar_relaciones_traza(memoria, conocimiento):
+        """Valida trazas y hechos derivados de documentos estructuralmente válidos."""
         errores = []
-
-        # Obtener las reglas disponibles.
-        reglas = {
-            regla["id"]: regla
-            for regla in conocimiento["rules"]
-        }
-
-        hechos_derivados = memoria["derived_facts"]
+        reglas = {r["id"]: r for r in conocimiento["rules"]}
+        derivados = memoria["derived_facts"]
         traza = memoria["execution_trace"]
+        disparos = {(paso["rule_fired"], paso["added_fact"]) for paso in traza}
 
-        # Comprobar los hechos derivados.
-        for nombre, hecho in hechos_derivados.items():
-
+        for nombre, hecho in derivados.items():
             ruta = f"$.derived_facts.{nombre}"
             regla_id = hecho["derived_by_rule"]
-
             regla = reglas.get(regla_id)
-
-            # Comprobar que la regla exista.
             if regla is None:
                 errores.append(
-                    f"{ruta}.derived_by_rule: "
-                    f"La regla '{regla_id}' no existe."
+                    f"{ruta}.derived_by_rule: La regla '{regla_id}' no existe."
                 )
-
             else:
                 conclusion = regla["conclusion"]
-
-                # Comprobar el atributo producido.
                 if conclusion["attribute_id"] != nombre:
                     errores.append(
-                        f"{ruta}: La regla '{regla_id}' "
-                        f"no produce el hecho '{nombre}'."
+                        f"{ruta}: La regla '{regla_id}' no produce el hecho '{nombre}'."
                     )
-
-                # Comprobar el valor producido.
                 if conclusion["value"] != hecho["value"]:
                     errores.append(
-                        f"{ruta}.value: El valor no coincide "
-                        f"con la conclusión de '{regla_id}'."
+                        f"{ruta}.value: El valor no coincide con la conclusión de '{regla_id}'."
                     )
 
-            # Comprobar que el hecho aparezca en la traza.
-            registrado = any(
-                paso["rule_fired"] == regla_id
-                and paso["added_fact"] == nombre
-                for paso in traza
-            )
-
-            if not registrado:
+            if (regla_id, nombre) not in disparos:
                 errores.append(
-                    f"{ruta}: Falta el registro "
-                    "correspondiente en execution_trace."
+                    f"{ruta}: Falta el registro correspondiente en execution_trace."
                 )
 
-        # Comprobar los registros de la traza.
         for i, paso in enumerate(traza):
-
             regla_id = paso["rule_fired"]
             regla = reglas.get(regla_id)
-
             if regla is None:
                 errores.append(
-                    f"$.execution_trace[{i}].rule_fired: "
-                    f"La regla '{regla_id}' no existe."
+                    f"$.execution_trace[{i}].rule_fired: La regla '{regla_id}' no existe."
                 )
                 continue
-
-            # Comprobar qué hecho produce la regla.
-            atributo_producido = regla["conclusion"]["attribute_id"]
-
-            if paso["added_fact"] != atributo_producido:
+            if paso["added_fact"] != regla["conclusion"]["attribute_id"]:
                 errores.append(
-                    f"$.execution_trace[{i}].added_fact: "
-                    f"La regla '{regla_id}' no produce "
-                    f"'{paso['added_fact']}'."
+                    f"$.execution_trace[{i}].added_fact: La regla '{regla_id}' "
+                    f"no produce '{paso['added_fact']}'."
                 )
+        return errores
 
-        return {
-            "valido": len(errores) == 0,
-            "errores": errores
-        }
+    def validar_traza(self, memoria, conocimiento):
+        """Valida una memoria y sus relaciones con las reglas disparadas."""
+        previo = self.validar_memoria(memoria, conocimiento)
+        if not previo["valido"]:
+            return previo
+        return self._resultado(self._validar_relaciones_traza(memoria, conocimiento))
 
-    def validar_dictamen(
-        self,
-        dictamen,
-        memoria,
-        atributo_resultado=None
-    ):
-
+    @staticmethod
+    def _validar_relacion_dictamen(dictamen, memoria, atributo_resultado):
+        """Compara sesiones y opcionalmente el hecho final seleccionado."""
         errores = []
-
-        # Validar las estructuras de ambos documentos.
-        resultado_dictamen = self.validar_datos(
-            dictamen, "dictamen_salida"
-        )
-
-        resultado_memoria = self.validar_datos(
-            memoria, "memoria_trabajo"
-        )
-
-        if not resultado_dictamen["valido"]:
-            errores.extend(resultado_dictamen["errores"])
-
-        if not resultado_memoria["valido"]:
-            errores.extend(resultado_memoria["errores"])
-
-        # No continuar si existen errores estructurales.
-        if errores:
-            return {
-                "valido": False,
-                "errores": errores
-            }
-
-        # Comprobar que pertenezcan a la misma sesión.
         if dictamen["session_id"] != memoria["session_id"]:
             errores.append(
-                "$.session_id: El dictamen y la memoria "
-                "pertenecen a sesiones diferentes."
+                "$.session_id: El dictamen y la memoria pertenecen a sesiones diferentes."
             )
-
-        # Comprobar el resultado cuando se indique un atributo.
         if atributo_resultado is not None:
-
-            hechos = memoria["derived_facts"]
-
-            if atributo_resultado not in hechos:
+            hecho = memoria["derived_facts"].get(atributo_resultado)
+            if hecho is None:
                 errores.append(
-                    f"$.derived_facts.{atributo_resultado}: "
-                    "No existe el hecho derivado indicado "
-                    "como resultado final."
+                    f"$.derived_facts.{atributo_resultado}: No existe el hecho "
+                    "derivado indicado como resultado final."
                 )
+            elif hecho["value"] != dictamen["final_outcome"]:
+                errores.append(
+                    "$.final_outcome: El resultado final no coincide con el "
+                    f"hecho derivado '{atributo_resultado}'."
+                )
+        return errores
 
-            else:
-                valor_derivado = hechos[atributo_resultado]["value"]
-                resultado_final = dictamen["final_outcome"]
-
-                if valor_derivado != resultado_final:
-                    errores.append(
-                        "$.final_outcome: El resultado final "
-                        f"no coincide con el hecho derivado "
-                        f"'{atributo_resultado}'."
-                    )
-
-        return {
-            "valido": len(errores) == 0,
-            "errores": errores
-        }
-
-    def validar_conjunto(
-        self,
-        conocimiento,
-        memoria,
-        dictamen,
-        atributo_resultado=None
-    ):
-
-        # Validar la memoria, las reglas y sus trazas.
-        resultado_traza = self.validar_traza(
-            memoria,
-            conocimiento
-        )
-
-        # Validar el dictamen y su relación con la memoria.
-        resultado_dictamen = self.validar_dictamen(
-            dictamen,
-            memoria,
-            atributo_resultado=atributo_resultado
-        )
-
-        # Reunir los errores de ambas validaciones.
+    def validar_dictamen(self, dictamen, memoria, atributo_resultado=None):
+        """Valida un dictamen y su relación con la memoria de una sesión."""
         errores = (
-            resultado_traza["errores"]
-            + resultado_dictamen["errores"]
+            self.validar_datos(dictamen, "dictamen_salida")["errores"]
+            + self.validar_datos(memoria, "memoria_trabajo")["errores"]
+        )
+        if errores:
+            return self._resultado(errores)
+        return self._resultado(
+            self._validar_relacion_dictamen(dictamen, memoria, atributo_resultado)
         )
 
-        # Eliminar mensajes duplicados conservando el orden.
-        errores = list(dict.fromkeys(errores))
+    def validar_conjunto(self, conocimiento, memoria, dictamen, atributo_resultado=None):
+        """Valida los tres documentos evitando validar el esquema repetidamente."""
+        errores = (
+            self.validar_datos(conocimiento, "conocimiento_dominio")["errores"]
+            + self.validar_datos(memoria, "memoria_trabajo")["errores"]
+            + self.validar_datos(dictamen, "dictamen_salida")["errores"]
+        )
+        if errores:
+            return self._resultado(errores)
 
-        return {
-            "valido": len(errores) == 0,
-            "errores": errores
-        }
-    
+        errores_hechos = self._validar_hechos(memoria, conocimiento)
+        errores.extend(errores_hechos)
+        if not errores_hechos:
+            errores.extend(self._validar_relaciones_traza(memoria, conocimiento))
+        errores.extend(
+            self._validar_relacion_dictamen(dictamen, memoria, atributo_resultado)
+        )
+        return self._resultado(errores)
+
     def validar_archivo(self, ruta, tipo):
-
-        # Primero intentamos cargar el archivo JSON.
+        """Valida un archivo y convierte errores de lectura/esquema a mensajes."""
         try:
             datos = self.cargar_json(ruta)
-
         except FileNotFoundError:
-            return {
-                "valido": False,
-                "errores": [f"No se encontró el archivo: {ruta}"]
-            }
-
+            return self._resultado([f"No se encontró el archivo: {ruta}"])
         except json.JSONDecodeError as error:
-            return {
-                "valido": False,
-                "errores": [
-                    f"JSON mal formado en la línea {error.lineno}, "
-                    f"columna {error.colno}: {error.msg}"
-                ]
-            }
-
+            return self._resultado([
+                f"JSON mal formado en la línea {error.lineno}, "
+                f"columna {error.colno}: {error.msg}"
+            ])
+        except ValueError as error:
+            return self._resultado([f"JSON inválido: {error}"])
         except OSError as error:
-            return {
-                "valido": False,
-                "errores": [f"No se pudo leer el archivo: {error}"]
-            }
+            return self._resultado([f"No se pudo leer el archivo: {error}"])
 
-        # Si se cargó correctamente, validamos su contenido.
         try:
             return self.validar_datos(datos, tipo)
-
         except ValueError as error:
-            return {
-                "valido": False,
-                "errores": [str(error)]
-            }
-
+            return self._resultado([str(error)])
         except FileNotFoundError:
-            return {
-                "valido": False,
-                "errores": [
-                    f"No se encontró el esquema correspondiente a '{tipo}'."
-                ]
-            }
-
+            return self._resultado([
+                f"No se encontró el esquema correspondiente a '{tipo}'."
+            ])
         except json.JSONDecodeError as error:
-            return {
-                "valido": False,
-                "errores": [
-                    f"El esquema JSON está mal formado en la línea "
-                    f"{error.lineno}, columna {error.colno}: {error.msg}"
-                ]
-            }
-
+            return self._resultado([
+                f"El esquema JSON está mal formado en la línea "
+                f"{error.lineno}, columna {error.colno}: {error.msg}"
+            ])
         except SchemaError as error:
-            return {
-                "valido": False,
-                "errores": [
-                    f"El esquema de validación es incorrecto: {error.message}"
-                ]
-            }
-
+            return self._resultado([
+                f"El esquema de validación es incorrecto: {error.message}"
+            ])
         except OSError as error:
-            return {
-                "valido": False,
-                "errores": [
-                    f"No se pudo cargar el esquema de validación: {error}"
-                ]
-            }
+            return self._resultado([
+                f"No se pudo cargar el esquema de validación: {error}"
+            ])
