@@ -19,9 +19,9 @@ El conjunto permite comprobar el funcionamiento de los contratos JSON, la memori
 | `ejemplos/dictamen_salida.json` | Resultado y explicaciones de esa consulta. |
 | `ejemplos/casos/repeticion_d/` | Consulta de repetición con una nota D. |
 | `ejemplos/casos/repeticion_a/` | Consulta de repetición con una nota A. |
-| `schemas/*.schema.json` | Definiciones generales de estructura que utilizará el validador. |
+| `schemas/*.schema.json` | Definiciones generales de estructura que utiliza el validador. |
 
-Los archivos de `ejemplos/` contienen información concreta. Los de `schemas/` describen el formato esperado. `SchemaManager`, desarrollado en `esb_schema.py`, utilizará estas definiciones para validar archivos recibidos de otros módulos.
+Los archivos de `ejemplos/` contienen información concreta. Los de `schemas/` describen el formato esperado. `SchemaManager`, implementado en `esb_schema.py`, utiliza estas definiciones para validar archivos recibidos de otros módulos.
 
 ## 3. Atributos utilizados
 
@@ -37,17 +37,17 @@ Primero se solicita `tipo_consulta`. Si es `Calificacion`, se pide `puntaje_fina
 
 ### 4.1. Clasificación del puntaje
 
-Se usan cinco reglas. El puntaje de entrada se considera **entero** entre 0 y 100.
+Se usan cinco reglas. El puntaje de entrada admite **enteros y decimales** entre 0 y 100, incluidos los extremos.
 
 | Regla | Puntaje | Resultado |
 |---|---|---|
-| `reg_calificacion_a` | 91–100 | A — Sobresaliente |
-| `reg_calificacion_b` | 81–90 | B — Bueno |
-| `reg_calificacion_c` | 71–80 | C — Regular |
-| `reg_calificacion_d` | 61–70 | D — Mínima de promoción |
-| `reg_calificacion_f` | 0–60 | F — Fracaso |
+| `reg_calificacion_a` | 91 ≤ puntaje ≤ 100 | A — Sobresaliente |
+| `reg_calificacion_b` | 81 ≤ puntaje < 91 | B — Bueno |
+| `reg_calificacion_c` | 71 ≤ puntaje < 81 | C — Regular |
+| `reg_calificacion_d` | 61 ≤ puntaje < 71 | D — Mínima de promoción |
+| `reg_calificacion_f` | 0 ≤ puntaje < 61 | F — Fracaso |
 
-Los rangos son excluyentes y cubren todos los puntajes enteros válidos. Así, una sola regla debe activarse para cada valor.
+Los intervalos no se superponen y cubren todos los puntajes numéricos entre 0 y 100, incluidos los decimales. Así, para la consulta `Calificacion`, un puntaje válido corresponde a exactamente una regla de clasificación.
 
 ### 4.2. Criterio de repetición
 
@@ -68,22 +68,37 @@ Esta evaluación no realiza una matrícula ni comprueba cupos, horarios o requis
 ```json
 {
   "id": "reg_calificacion_b",
-  "description": "Clasificación de calificación B (81-90)",
+  "description": "Clasificación de calificación B (81 <= puntaje < 91)",
   "priority": 10,
   "conditions": [
-    {"attribute_id": "tipo_consulta", "operator": "==", "value": "Calificacion"},
-    {"attribute_id": "puntaje_final", "operator": ">=", "value": 81},
-    {"attribute_id": "puntaje_final", "operator": "<=", "value": 90}
+    {
+      "attribute_id": "tipo_consulta",
+      "operator": "==",
+      "value": "Calificacion"
+    },
+    {
+      "attribute_id": "puntaje_final",
+      "operator": ">=",
+      "value": 81
+    },
+    {
+      "attribute_id": "puntaje_final",
+      "operator": "<",
+      "value": 91
+    }
   ],
-  "conclusion": {"attribute_id": "dictamen", "value": "Calificación B - Bueno"},
-  "explanation_template": "El puntaje ingresado se encuentra entre 81 y 90, por lo que corresponde a la calificación B (Bueno)."
+  "conclusion": {
+    "attribute_id": "dictamen",
+    "value": "Calificación B - Bueno"
+  },
+  "explanation_template": "El puntaje ingresado se encuentra desde 81 (incluido) hasta 91 (sin incluir), por lo que corresponde a la calificación B (Bueno)."
 }
 ```
 
 - `id`: identifica la regla y permite registrarla en la traza de ejecución.
 - `description`: describe brevemente qué comprueba.
 - `priority`: prioridad numérica que el motor puede utilizar para resolver conflictos.
-- `conditions`: condiciones que deben cumplirse. Se emplean los operadores `==`, `>=` y `<=`.
+- `conditions`: condiciones que deben cumplirse. En esta regla se emplean los operadores `==`, `>=` y `<`.
 - `conclusion`: hecho que se obtiene cuando se activa la regla.
 - `explanation_template`: texto que puede utilizarse al explicar el resultado.
 
@@ -103,8 +118,8 @@ Los archivos de memoria y dictamen muestran resultados esperados; el motor de in
 
 Los esquemas definen las estructuras generales de conocimiento, memoria y dictamen. No limitan la plataforma a este caso académico. Las comprobaciones adicionales previstas para `SchemaManager` incluyen identificadores duplicados, atributos referenciados que no existen, rangos mal ordenados y valores incompatibles con los tipos declarados.
 
-Para esta consulta, la entrada `puntaje_final` debe ser un entero de 0 a 100. Esta restricción se verificará durante la captura o validación semántica del caso, ya que el esquema general admite otros atributos numéricos.
+Para esta consulta, `puntaje_final` puede ser un entero o decimal entre 0 y 100. `validar_memoria()` comprueba los valores y el rango declarado en el conocimiento; `validar_completitud()` comprueba por separado si están presentes los atributos requeridos.
 
-El atributo de salida `dictamen` se considera derivado y no se solicita al usuario. Se debe confirmar con los demás grupos si los atributos derivados requieren aparecer previamente en `attributes`.
+El atributo de salida `dictamen` se considera derivado y no se solicita al usuario. La versión actual lo utiliza sin declararlo en `attributes`; se mantiene ese comportamiento y cualquier cambio del contrato se coordinará con los demás grupos.
 
 Los archivos compartidos de `contracts/` y las firmas públicas de `SchemaManager` deben mantenerse de acuerdo con el contrato aprobado por los coordinadores del proyecto. El contenido académico puede cambiar sin modificar la estructura general del sistema.
