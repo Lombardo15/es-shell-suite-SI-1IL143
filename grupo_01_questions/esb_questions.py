@@ -201,22 +201,95 @@ class QuestionEditor:
 
     # --- Operaciones pendientes (Sprint 1) ---
 
+
     def validate(self) -> dict:
-        """Verifica la coherencia interna de la base de atributos.
+        """Verifica la coherencia interna de la base de atributos."""
+    
+        errores = []
+        ids_validos = set(self._attributes.keys())
+    
+        # Verificar que exista al menos un atributo.
+        if not self._attributes:
+            errores.append(
+                "La base de atributos está vacía; se requiere al menos un atributo."
+            )
+    
+        # Recorrer todos los atributos registrados.
+        for attr in self._attributes.values():
+    
+            # 1. Validar el tipo del atributo.
+            if attr.type not in TIPOS_VALIDOS:
+                errores.append(
+                    f"El atributo '{attr.id}' tiene un tipo inválido: "
+                    f"'{attr.type}'. Tipos permitidos: {TIPOS_VALIDOS}."
+                )
+    
+            # 2. Validar el rango de los atributos numéricos.
+            if attr.type == "numeric" and attr.range is not None:
+                rango = attr.range
+    
+                if not isinstance(rango, list) or len(rango) != 2:
+                    errores.append(
+                        f"El atributo '{attr.id}' debe tener un rango "
+                        "formado por una lista de exactamente 2 números."
+                    )
+                elif any(
+                    isinstance(valor, bool)
+                    or not isinstance(valor, (int, float))
+                    for valor in rango
+                ):
+                    errores.append(
+                        f"El atributo '{attr.id}' tiene un rango con valores "
+                        "no numéricos."
+                    )
+                elif rango[0] > rango[1]:
+                    errores.append(
+                        f"El atributo '{attr.id}' tiene un rango invertido: "
+                        f"{rango}."
+                    )
+    
+            # 3. Validar las opciones de los atributos categóricos.
+            if attr.type == "categorical":
+                opciones = attr.options
+    
+                if not isinstance(opciones, list) or not opciones:
+                    errores.append(
+                        f"El atributo '{attr.id}' es categórico, pero no tiene "
+                        "opciones válidas."
+                    )
+                else:
+                    opciones_vistas = []
+                    for opcion in opciones:
+                        if opcion in opciones_vistas:
+                            errores.append(
+                                f"El atributo '{attr.id}' tiene una opción "
+                                f"duplicada: '{opcion}'."
+                            )
+                        else:
+                            opciones_vistas.append(opcion)
+    
+            # 4. Validar las dependencias entre atributos.
+            if attr.depends_on is not None:
+                dependencia = attr.depends_on
+    
+                if dependencia.attribute_id not in ids_validos:
+                    errores.append(
+                        f"El atributo '{attr.id}' depende del atributo "
+                        f"inexistente '{dependencia.attribute_id}'."
+                    )
+    
+                if dependencia.operator not in OPERADORES_VALIDOS:
+                    errores.append(
+                        f"El atributo '{attr.id}' tiene un operador inválido "
+                        f"en depends_on: '{dependencia.operator}'."
+                    )
+    
+        # Construir el resultado de la validación.
+        return {
+            "valido": len(errores) == 0,
+            "errores": errores
+        }
 
-        Debe comprobar, como minimo:
-        - Ids unicos (garantizado por el dict, pero verificable).
-        - ``type`` dentro de ``TIPOS_VALIDOS``.
-        - Si ``type == 'numeric'`` y ``range`` existe: dos numeros, minimo <= maximo.
-        - Si ``type == 'categorical'``: ``options`` no vacia y sin duplicados.
-        - Si existe ``depends_on``: el ``attribute_id`` referenciado existe y
-          el ``operator`` esta en ``OPERADORES_VALIDOS``.
-
-        Devuelve ``{"valido": bool, "errores": list[str]}``.
-
-        TODO Integrante B (Sprint 1).
-        """
-        raise NotImplementedError("validate() se implementa en Sprint 1 (Integrante B).")
 
     def save_to_json(self, path: str) -> None:
         """Escribe la seccion ``attributes`` del contrato en ``path``.

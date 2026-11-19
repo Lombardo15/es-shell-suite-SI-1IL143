@@ -111,7 +111,7 @@ def test_operaciones_sobre_atributo_inexistente_fallan():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skip(reason="validate() pendiente - Integrante B")
+
 def test_validate_rechaza_tipo_invalido():
     editor = QuestionEditor()
     editor.add_attribute(Attribute(id="x", name="X", type="tipo_inexistente"))
@@ -120,7 +120,7 @@ def test_validate_rechaza_tipo_invalido():
     assert any("tipo" in e.lower() for e in resultado["errores"])
 
 
-@pytest.mark.skip(reason="validate() pendiente - Integrante B")
+
 def test_validate_rechaza_rango_invertido():
     editor = QuestionEditor()
     editor.add_attribute(Attribute(id="promedio", name="Promedio",
@@ -129,7 +129,7 @@ def test_validate_rechaza_rango_invertido():
     assert resultado["valido"] is False
 
 
-@pytest.mark.skip(reason="validate() pendiente - Integrante B")
+
 def test_validate_rechaza_categorico_sin_opciones():
     editor = QuestionEditor()
     editor.add_attribute(Attribute(id="materia", name="Materia", type="categorical"))
@@ -137,7 +137,7 @@ def test_validate_rechaza_categorico_sin_opciones():
     assert resultado["valido"] is False
 
 
-@pytest.mark.skip(reason="validate() pendiente - Integrante B")
+
 def test_validate_rechaza_depends_on_a_atributo_inexistente():
     editor = QuestionEditor()
     editor.add_attribute(Attribute(

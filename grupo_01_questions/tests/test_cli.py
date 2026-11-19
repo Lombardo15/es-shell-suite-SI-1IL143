@@ -168,10 +168,22 @@ def test_listar_muestra_atributos(capsys):
     assert "¿Promedio?" in salida
 
 
-def test_validar_sin_implementar_muestra_mensaje_amable(capsys):
+def test_validar_muestra_resultado_cuando_base_esta_vacia(capsys):
+    """Antes esperabamos 'Pendiente' porque validate() no estaba hecho.
+    Ahora validate() funciona y detecta que la base esta vacia."""
     accion_validar(QuestionEditor())
     salida = capsys.readouterr().out
-    assert "Pendiente" in salida or "pendiente" in salida
+    assert "La base" in salida and "vacía" in salida
+
+
+def test_validar_muestra_ok_cuando_base_es_correcta(capsys):
+    """Si la base tiene atributos validos, validate() no reporta errores."""
+    editor = QuestionEditor()
+    editor.add_attribute(Attribute(id="promedio", name="Promedio",
+                                   type="numeric", range=[0.0, 3.0]))
+    accion_validar(editor)
+    salida = capsys.readouterr().out
+    assert "valida" in salida.lower() or "✓" in salida
 
 
 # ---------------------------------------------------------------------------
