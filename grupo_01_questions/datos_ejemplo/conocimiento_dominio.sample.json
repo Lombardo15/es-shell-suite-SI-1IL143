@@ -1,0 +1,36 @@
+{
+  "meta": {
+    "project_title": "Sistema Experto de Evaluacion Academica UTP (ejemplo)",
+    "version": "0.1",
+    "author_group": "Grupo 1 - QuestionEditor"
+  },
+  "attributes": [
+    {
+      "id": "materia",
+      "name": "Tipo de asignatura solicitada",
+      "type": "categorical",
+      "question": "Seleccione el tipo de asignatura que desea matricular:",
+      "options": ["Obligatoria", "Electiva", "Trabajo de Graduacion"]
+    },
+    {
+      "id": "promedio",
+      "name": "Promedio Ponderado Acumulado",
+      "type": "numeric",
+      "question": "Cual es el promedio ponderado del estudiante?",
+      "range": [0.0, 3.0],
+      "help_text": "Escala 0.0 a 3.0. Puede consultarlo en el portal estudiantil."
+    },
+    {
+      "id": "nombre_tesis",
+      "name": "Nombre del trabajo de graduacion",
+      "type": "text",
+      "question": "Cual es el titulo del trabajo de graduacion?",
+      "depends_on": {
+        "attribute_id": "materia",
+        "operator": "==",
+        "value": "Trabajo de Graduacion"
+      }
+    }
+  ],
+  "rules": []
+}
