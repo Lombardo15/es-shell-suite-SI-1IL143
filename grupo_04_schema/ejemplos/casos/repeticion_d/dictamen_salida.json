@@ -1,0 +1,9 @@
+{
+  "session_id": "sesion_repeticion_002",
+  "final_outcome": "La calificación D cumple el criterio de nota D o F para repetir con el fin de mejorar el índice.",
+  "explanation_how": [
+    "Se registró la calificación D.",
+    "Se activó la regla reg_repeticion_d."
+  ],
+  "explanation_why": "La calificación literal permite verificar si cumple el criterio D o F."
+}

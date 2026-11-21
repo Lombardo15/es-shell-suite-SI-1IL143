@@ -1,0 +1,9 @@
+{
+  "session_id": "sesion_calificacion_001",
+  "final_outcome": "Calificación B - Bueno",
+  "explanation_how": [
+    "Se recibió el puntaje 85.",
+    "El puntaje satisface el rango de 81 a 90 de la regla reg_calificacion_b."
+  ],
+  "explanation_why": "Se solicita el puntaje para determinar la calificación correspondiente."
+}

@@ -1,0 +1,20 @@
+{
+  "session_id": "sesion_repeticion_002",
+  "facts": {
+    "tipo_consulta": "Repeticion",
+    "nota_obtenida": "D"
+  },
+  "derived_facts": {
+    "dictamen": {
+      "value": "La calificación D cumple el criterio de nota D o F para repetir con el fin de mejorar el índice.",
+      "derived_by_rule": "reg_repeticion_d"
+    }
+  },
+  "execution_trace": [
+    {
+      "step": 1,
+      "rule_fired": "reg_repeticion_d",
+      "added_fact": "dictamen"
+    }
+  ]
+}

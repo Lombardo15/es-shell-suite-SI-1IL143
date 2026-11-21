@@ -1,0 +1,52 @@
+{
+  "meta": {
+    "project_title": "Sistema Experto de Evaluacion Academica UTP",
+    "version": "1.0",
+    "author_group": "Grupo 4 - Schema Manager"
+  },
+  "attributes": [
+    {
+      "id": "promedio",
+      "name": "Promedio Ponderado Acumulado",
+      "type": "numeric",
+      "question": "¿Cuál es el promedio ponderado del estudiante?",
+      "range": [0.0, 3.0],
+      "options": []
+    },
+    {
+      "id": "materia",
+      "name": "Tipo de Asignatura Solicitada",
+      "type": "categorical",
+      "question": "Seleccione el tipo de asignatura que desea matricular:",
+      "options": [
+        "Obligatoria",
+        "Electiva",
+        "Trabajo de Graduacion"
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "id": "rule_01",
+      "description": "Elegibilidad para un trámite",
+      "priority": 10,
+      "conditions": [
+        {
+          "attribute_id": "materia",
+          "operator": "==",
+          "value": "Trabajo de Graduacion"
+        },
+        {
+          "attribute_id": "promedio",
+          "operator": ">=",
+          "value": 2.0
+        }
+      ],
+      "conclusion": {
+        "attribute_id": "dictamen",
+        "value": "Elegible"
+      },
+      "explanation_template": "El promedio cumple el mínimo requerido."
+    }
+  ]
+}

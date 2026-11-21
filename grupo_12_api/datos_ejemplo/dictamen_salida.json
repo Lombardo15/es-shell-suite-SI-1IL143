@@ -1,0 +1,11 @@
+{
+  "session_id": "sess_2026_10123",
+  "final_outcome": "Elegible",
+  "certainty_score": 1.0,
+  "explanation_how": [
+    "Se determinó 'Elegible' debido a la regla rule_01.",
+    "Premisa 1: materia == 'Trabajo de Graduacion' (Verificado)",
+    "Premisa 2: promedio >= 2.0 (Valor ingresado: 2.25)"
+  ],
+  "explanation_why": "Se solicitó 'promedio' para evaluar la condición de la regla rule_01."
+}
