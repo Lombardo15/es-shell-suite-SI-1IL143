@@ -90,9 +90,3 @@ python -m pytest grupo_07_uncertainty
 ```
 
 `test_uncertainty.py` prueba las fórmulas, el umbral, las cadenas de reglas, las reglas equivalentes y los datos inválidos. `test_integracion_g5_g8_g4.py` toma la memoria que genera `ForwardEngine`, le calcula los FC y revisa que G8 los muestre y que G4 valide la memoria y el dictamen. Si falta `jsonschema` o alguno de esos módulos, esas pruebas se omiten. Se necesita Python 3.11 o superior y `pytest`.
-
-## Referencias
-
-Buchanan, B. G., & Shortliffe, E. H. (Eds.). (1984). *Rule-based expert systems: The MYCIN experiments of the Stanford Heuristic Programming Project*. Addison-Wesley.
-
-Shortliffe, E. H., & Buchanan, B. G. (1975). A model of inexact reasoning in medicine. *Mathematical Biosciences, 23*(3-4), 351-379. https://doi.org/10.1016/0025-5564(75)90047-4
