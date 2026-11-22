@@ -81,12 +81,6 @@ Con la última condición no se cuentan reglas que el motor todavía no podía d
 | G9 | `certainty_score` para el reporte |
 | G12 | `evaluate()` y `complete_verdict()` para llenar `memoria_trabajo.json` y `dictamen_salida.json` |
 
-## Pendientes
-
-1. G5 no escribe `certainty_factor`, así que G10 o G12 tendrían que llamar a `evaluate` después de la inferencia.
-2. Los contratos no tienen un campo para el FC de una regla ni de un dato del usuario, por eso se pasan como parámetros.
-3. `dictamen_salida.json` no dice cuál es el atributo final. Por eso `complete_verdict` lo recibe como parámetro (en los ejemplos es `dictamen`).
-
 ## Pruebas
 
 Desde la raíz del repositorio:
